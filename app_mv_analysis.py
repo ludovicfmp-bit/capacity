@@ -79,65 +79,51 @@ with st.sidebar:
     """)
 
 # ============================================
-# CHARGEMENT
+# CHARGEMENT DONNÉES (CORRIGÉ)
 # ============================================
 
 if uploaded_occ is None or uploaded_load is None:
-    st.info("👈 **Chargez OCC et LOAD dans la barre latérale**")
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.markdown("""
-        ### 🎯 Objectif MV
-
-        Identifier la **charge horaire limite** avant dégradation :
-        - 72 fenêtres/jour (pas 20min)
-        - Graphique : **Charge (X) vs Score (Y)**
-        - MV = seuil où score chute
-        """)
-
-    with col2:
-        st.markdown("""
-        ### 📈 Méthode
-
-        Pour chaque fenêtre 60min :
-        1. Score OCC (60 minutes)
-        2. Charge LOAD (même fenêtre)
-        3. Point (charge, score)
-        4. Analyse statistique → MV
-        """)
-
+    st.info("👈 **Chargez OCC et LOAD**")
     st.stop()
 
-# Charger OCC
+# Charger OCC (SANS index_col)
 try:
-    occ_df = pd.read_csv(uploaded_occ, sep=';', index_col=0)
-    occ_df.index.name = 'Date'
-    tv_occ = occ_df['ID'].iloc[0]
+    occ_df = pd.read_csv(uploaded_occ, sep=';')
+    tv_occ = occ_df.iloc[0, 1]  # Colonne B = ID
+    occ_df['Date'] = pd.to_datetime(occ_df['Date'], format='%d/%m/%Y')
+    
+    # Colonnes minutes
+    minute_cols = [col for col in occ_df.columns if 'Duration 11 Min' in col]
+    
+    st.success(f"✅ OCC : **{tv_occ}** | {len(occ_df)} jours | {len(minute_cols)} minutes")
+    
 except Exception as e:
     st.error(f"❌ Erreur OCC : {e}")
     st.stop()
 
-# Charger LOAD
+# Charger LOAD (SANS index_col)
 try:
     load_df = pd.read_csv(uploaded_load, sep=';')
-    tv_load = load_df['ID'].iloc[0]
-
-    if tv_load != tv_occ:
-        st.warning(f"⚠️ TV différents : OCC={tv_occ}, LOAD={tv_load}")
-
-    tv_detected = tv_load
-
+    tv_load = load_df.iloc[0, 1]  # Colonne B = ID
+    load_df['Date'] = pd.to_datetime(load_df['Date'], format='%d/%m/%Y')
+    
+    # Colonnes LOAD
+    load_cols = [col for col in load_df.columns if ':' in col and '-' in col]
+    
+    st.success(f"✅ LOAD : **{tv_load}** | {len(load_df)} jours | {len(load_cols)} fenêtres")
+    
 except Exception as e:
     st.error(f"❌ Erreur LOAD : {e}")
     st.stop()
 
-# Vérifier format LOAD (glissant ?)
-load_cols = [col for col in load_df.columns if ':' in col and '-' in col]
-mode = "GLISSANT_20MIN" if len(load_cols) > 24 else "FIXE"
+# Vérification
+if tv_occ != tv_load:
+    st.error(f"❌ TV différents : OCC={tv_occ}, LOAD={tv_load}")
+    st.stop()
+else:
+    tv_detected = tv_occ
+    st.balloons()
 
-st.success(f"✅ **{tv_detected}** | OCC: {len(occ_df)} jours | LOAD: {len(load_df)} jours | Mode: **{mode}** ({len(load_cols)} colonnes)")
 
 # ============================================
 # FONCTIONS SCORING
