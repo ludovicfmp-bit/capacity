@@ -79,56 +79,52 @@ with st.sidebar:
     """)
 
 # ============================================
-# CHARGEMENT (100% ROBUSTE)
+# CHARGEMENT (SÉCURISÉ)
 # ============================================
 
-occ_df = pd.read_csv(uploaded_occ, sep=';')
-load_df = pd.read_csv(uploaded_load, sep=';')
-
-# Trouver LFEKHN dans OCC (ligne 0, n'importe quelle colonne 1-4)
-tv_occ = None
-for i in range(1, 5):  # Colonnes B-E
-    val = str(occ_df.iloc[0, i]).strip()
-    if 'LFEKHN' in val:
-        tv_occ = val
-        st.info(f"✅ OCC LFEKHN trouvé colonne {i+1}: '{val}'")
-        break
-
-if tv_occ is None:
-    tv_occ = 'LFEKHN'
-    st.warning("⚠️ OCC: LFEKHN auto")
-
-# Même pour LOAD
-tv_load = None
-for i in range(1, 5):
-    val = str(load_df.iloc[0, i]).strip()
-    if 'LFEKHN' in val:
-        tv_load = val
-        st.info(f"✅ LOAD LFEKHN trouvé colonne {i+1}: '{val}'")
-        break
-
-if tv_load is None:
-    tv_load = 'LFEKHN'
-    st.warning("⚠️ LOAD: LFEKHN auto")
-
-# Dates
-if 'Date' in occ_df.columns: occ_df['Date'] = pd.to_datetime(occ_df['Date'], format='%d/%m/%Y', errors='coerce')
-if 'Date' in load_df.columns: load_df['Date'] = pd.to_datetime(load_df['Date'], format='%d/%m/%Y', errors='coerce')
-
-# Colonnes
-minute_cols = [col for col in occ_df.columns if any(x in col for x in ['Duration', 'Min', 'Actual'])]
-load_cols = [col for col in load_df.columns if ':' in col or 'Demand' in col]
-
-# Validation
-if 'LFEKHN' in tv_occ and 'LFEKHN' in tv_load:
-    tv_detected = 'LFEKHN'
-    st.balloons()
-else:
-    st.error(f"❌ TV: OCC='{tv_occ}' ≠ LOAD='{tv_load}'")
+# Vérif fichiers
+if uploaded_occ is None or uploaded_load is None:
+    st.warning("👈 **Upload OCC et LOAD d'abord !**")
     st.stop()
 
-st.success(f"🎯 **{tv_detected}** | OCC:{len(occ_df)}j/{len(minute_cols)}col | LOAD:{len(load_df)}j/{len(load_cols)}col")
+# Lecture sécurisée
+try:
+    occ_df = pd.read_csv(uploaded_occ, sep=';')
+    load_df = pd.read_csv(uploaded_load, sep=';')
+except Exception as e:
+    st.error(f"❌ Erreur lecture CSV : {e}")
+    st.stop()
 
+# Debug premières lignes
+st.info(f"🔍 OCC shape: {occ_df.shape}")
+st.info(f"🔍 LOAD shape: {load_df.shape}")
+st.info(f"🔍 OCC ligne 0: {occ_df.iloc[0, :5].tolist()}")
+
+# TV robuste
+def find_tv(df, name):
+    for i in range(1, min(6, len(df.columns))):
+        val = str(df.iloc[0, i]).strip()
+        if name in val:
+            return val, i+1
+    return name, "auto"
+
+tv_occ, col_occ = find_tv(occ_df, "LFEKHN")
+tv_load, col_load = find_tv(load_df, "LFEKHN")
+
+st.success(f"✅ OCC '{tv_occ}' (col {col_occ}) | LOAD '{tv_load}' (col {col_load})")
+
+# Dates
+for df, name in [(occ_df, "OCC"), (load_df, "LOAD")]:
+    if 'Date' in df.columns:
+        df['Date'] = pd.to_datetime(df['Date'], format='%d/%m/%Y', errors='coerce')
+
+# Colonnes
+minute_cols = [c for c in occ_df if any(x in c for x in ['Duration', 'Min', 'Actual'])]
+load_cols = [c for c in load_df if ':' in c or 'Demand' in c]
+
+tv_detected = "LFEKHN"
+st.balloons()
+st.info(f"📊 {tv_detected} | OCC:{len(occ_df)}j/{len(minute_cols)}min | LOAD:{len(load_df)}j/{len(load_cols)}fen")
 
 
 # ============================================
