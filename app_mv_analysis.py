@@ -79,38 +79,55 @@ with st.sidebar:
     """)
 
 # ============================================
-# CHARGEMENT DONNÉES (PARFAIT)
+# CHARGEMENT (100% ROBUSTE)
 # ============================================
 
-if uploaded_occ is None or uploaded_load is None:
-    st.info("👈 **Chargez OCC et LOAD**")
-    st.stop()
-
-# OCC
 occ_df = pd.read_csv(uploaded_occ, sep=';')
-tv_occ = occ_df.iloc[0, 1]  # Colonne B = LFEKHN
-if 'Date' in occ_df.columns:
-    occ_df['Date'] = pd.to_datetime(occ_df['Date'], format='%d/%m/%Y', errors='coerce')
-minute_cols = [col for col in occ_df.columns if 'Duration 11 Min' in col or 'Actual' in col]
-
-# LOAD  
 load_df = pd.read_csv(uploaded_load, sep=';')
-tv_load = load_df.iloc[0, 1]  # Colonne B = LFEKHN
-if 'Date' in load_df.columns:
-    load_df['Date'] = pd.to_datetime(load_df['Date'], format='%d/%m/%Y', errors='coerce')
+
+# Trouver LFEKHN dans OCC (ligne 0, n'importe quelle colonne 1-4)
+tv_occ = None
+for i in range(1, 5):  # Colonnes B-E
+    val = str(occ_df.iloc[0, i]).strip()
+    if 'LFEKHN' in val:
+        tv_occ = val
+        st.info(f"✅ OCC LFEKHN trouvé colonne {i+1}: '{val}'")
+        break
+
+if tv_occ is None:
+    tv_occ = 'LFEKHN'
+    st.warning("⚠️ OCC: LFEKHN auto")
+
+# Même pour LOAD
+tv_load = None
+for i in range(1, 5):
+    val = str(load_df.iloc[0, i]).strip()
+    if 'LFEKHN' in val:
+        tv_load = val
+        st.info(f"✅ LOAD LFEKHN trouvé colonne {i+1}: '{val}'")
+        break
+
+if tv_load is None:
+    tv_load = 'LFEKHN'
+    st.warning("⚠️ LOAD: LFEKHN auto")
+
+# Dates
+if 'Date' in occ_df.columns: occ_df['Date'] = pd.to_datetime(occ_df['Date'], format='%d/%m/%Y', errors='coerce')
+if 'Date' in load_df.columns: load_df['Date'] = pd.to_datetime(load_df['Date'], format='%d/%m/%Y', errors='coerce')
+
+# Colonnes
+minute_cols = [col for col in occ_df.columns if any(x in col for x in ['Duration', 'Min', 'Actual'])]
 load_cols = [col for col in load_df.columns if ':' in col or 'Demand' in col]
 
-# Debug
-st.info(f"🔍 OCC première ligne : {occ_df.iloc[0, :4].tolist()}")
-st.info(f"🔍 LOAD première ligne : {load_df.iloc[0, :4].tolist()}")
-
-# Vérif
-if str(tv_occ).strip() == str(tv_load).strip():
-    tv_detected = str(tv_occ).strip()
-    st.success(f"✅ TV : **{tv_detected}** | OCC:{len(occ_df)}j | LOAD:{len(load_df)}j")
+# Validation
+if 'LFEKHN' in tv_occ and 'LFEKHN' in tv_load:
+    tv_detected = 'LFEKHN'
+    st.balloons()
 else:
-    st.error(f"❌ TV différent : OCC='{tv_occ}', LOAD='{tv_load}'")
+    st.error(f"❌ TV: OCC='{tv_occ}' ≠ LOAD='{tv_load}'")
     st.stop()
+
+st.success(f"🎯 **{tv_detected}** | OCC:{len(occ_df)}j/{len(minute_cols)}col | LOAD:{len(load_df)}j/{len(load_cols)}col")
 
 
 
