@@ -79,53 +79,65 @@ with st.sidebar:
     """)
 
 # ============================================
-# CHARGEMENT (SÉCURISÉ)
+# CHARGEMENT
 # ============================================
 
-# Vérif fichiers
 if uploaded_occ is None or uploaded_load is None:
-    st.warning("👈 **Upload OCC et LOAD d'abord !**")
+    st.info("👈 **Chargez OCC et LOAD dans la barre latérale**")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("""
+        ### 🎯 Objectif MV
+
+        Identifier la **charge horaire limite** avant dégradation :
+        - 72 fenêtres/jour (pas 20min)
+        - Graphique : **Charge (X) vs Score (Y)**
+        - MV = seuil où score chute
+        """)
+
+    with col2:
+        st.markdown("""
+        ### 📈 Méthode
+
+        Pour chaque fenêtre 60min :
+        1. Score OCC (60 minutes)
+        2. Charge LOAD (même fenêtre)
+        3. Point (charge, score)
+        4. Analyse statistique → MV
+        """)
+
     st.stop()
 
-# Lecture sécurisée
+# Charger OCC
 try:
-    occ_df = pd.read_csv(uploaded_occ, sep=';')
-    load_df = pd.read_csv(uploaded_load, sep=';')
+    occ_df = pd.read_csv(uploaded_occ, sep=';', index_col=0)
+    occ_df.index.name = 'Date'
+    tv_occ = occ_df['ID'].iloc[0]
 except Exception as e:
-    st.error(f"❌ Erreur lecture CSV : {e}")
+    st.error(f"❌ Erreur OCC : {e}")
     st.stop()
 
-# Debug premières lignes
-st.info(f"🔍 OCC shape: {occ_df.shape}")
-st.info(f"🔍 LOAD shape: {load_df.shape}")
-st.info(f"🔍 OCC ligne 0: {occ_df.iloc[0, :5].tolist()}")
+# Charger LOAD
+try:
+    load_df = pd.read_csv(uploaded_load, sep=';')
+    tv_load = load_df['ID'].iloc[0]
 
-# TV robuste
-def find_tv(df, name):
-    for i in range(1, min(6, len(df.columns))):
-        val = str(df.iloc[0, i]).strip()
-        if name in val:
-            return val, i+1
-    return name, "auto"
+    if tv_load != tv_occ:
+        st.warning(f"⚠️ TV différents : OCC={tv_occ}, LOAD={tv_load}")
 
-tv_occ, col_occ = find_tv(occ_df, "LFEKHN")
-tv_load, col_load = find_tv(load_df, "LFEKHN")
+    tv_detected = tv_load
 
-st.success(f"✅ OCC '{tv_occ}' (col {col_occ}) | LOAD '{tv_load}' (col {col_load})")
+except Exception as e:
+    st.error(f"❌ Erreur LOAD : {e}")
+    st.stop()
 
-# Dates
-for df, name in [(occ_df, "OCC"), (load_df, "LOAD")]:
-    if 'Date' in df.columns:
-        df['Date'] = pd.to_datetime(df['Date'], format='%d/%m/%Y', errors='coerce')
+# Vérifier format LOAD (glissant ?)
+load_cols = [col for col in load_df.columns if ':' in col and '-' in col]
+mode = "GLISSANT_20MIN" if len(load_cols) > 24 else "FIXE"
 
-# Colonnes
-minute_cols = [c for c in occ_df if any(x in c for x in ['Duration', 'Min', 'Actual'])]
-load_cols = [c for c in load_df if ':' in c or 'Demand' in c]
-
-tv_detected = "LFEKHN"
-st.balloons()
-st.info(f"📊 {tv_detected} | OCC:{len(occ_df)}j/{len(minute_cols)}min | LOAD:{len(load_df)}j/{len(load_cols)}fen")
-
+st.success(f"✅ **{tv_detected}** | OCC: {len(occ_df)} jours | LOAD: {len(load_df)} jours | Mode: **{mode}** ({len(load_cols)} colonnes)")
 
 # ============================================
 # FONCTIONS SCORING
