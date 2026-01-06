@@ -5,13 +5,13 @@ import plotly.express as px
 from datetime import datetime
 import numpy as np
 
-st.set_page_config(page_title="Analyse MV (Minimum de Viabilité)", page_icon="📊", layout="wide")
+st.set_page_config(page_title="Analyse MV - Charge vs Score", page_icon="📊", layout="wide")
 
-st.title("📊 Analyse MV - Minimum de Viabilité TV")
-st.markdown("*Calcul des scores de viabilité basé sur occupation (OCC) vs seuils SUSTAIN/PEAK*")
+st.title("📊 Analyse MV - Minimum de Viabilité")
+st.markdown("*Corrélation entre charges horaires (LOAD) et scores d'occupation (OCC)*")
 
 # ============================================
-# SIDEBAR : UPLOAD & CONFIGURATION
+# SIDEBAR
 # ============================================
 
 with st.sidebar:
@@ -21,18 +21,18 @@ with st.sidebar:
         "1️⃣ OCC (occupation minute)", 
         type=['csv'], 
         key='occ',
-        help="Fichier OCC_XXX.csv avec occupation minute par minute"
+        help="Fichier OCC avec occupation minute par minute"
     )
 
     uploaded_load = st.file_uploader(
         "2️⃣ LOAD (charges horaires)", 
         type=['csv'], 
         key='load',
-        help="Fichier LOAD_XXX.csv - optionnel pour comparaison"
+        help="Fichier LOAD avec charges horaires"
     )
 
     st.divider()
-    st.header("⚙️ Configuration seuils")
+    st.header("⚙️ Configuration")
 
     sustain = st.number_input(
         "SUSTAIN (av/min)", 
@@ -40,7 +40,7 @@ with st.sidebar:
         max_value=30.0,
         value=20.0, 
         step=0.5,
-        help="Seuil minimal pour maintenir secteur groupé"
+        help="Seuil minimal pour secteur groupé"
     )
 
     peak = st.number_input(
@@ -49,7 +49,7 @@ with st.sidebar:
         max_value=40.0,
         value=25.0, 
         step=0.5,
-        help="Seuil de dégroupement (si dépassé)"
+        help="Seuil de dégroupement"
     )
 
     tolerance = st.number_input(
@@ -64,39 +64,48 @@ with st.sidebar:
     st.info(f"🎯 Zone viable : ≤ {sustain + tolerance} av/min")
     st.warning(f"⚠️ Dégroupement : > {peak} av/min")
 
+    st.divider()
+    st.header("📊 Méthodes")
+
+    st.markdown("""
+    **Option A : Linéaire**
+    - OCC ≤ seuil → +1
+    - OCC > seuil → -(dépassement)
+
+    **Option B : Trois zones**
+    - OCC ≤ seuil → +1
+    - seuil < OCC ≤ PEAK → 0
+    - OCC > PEAK → -(dépassement)×2
+    """)
+
 # ============================================
-# MAIN : CHARGEMENT DONNÉES
+# CHARGEMENT DONNÉES
 # ============================================
 
-if uploaded_occ is None:
-    st.info("👈 **Commencez par charger le fichier OCC dans la barre latérale**")
+if uploaded_occ is None or uploaded_load is None:
+    st.info("👈 **Chargez OCC et LOAD dans la barre latérale**")
 
     col1, col2 = st.columns(2)
 
     with col1:
         st.markdown("""
-        ### 📝 Fichier requis
+        ### 🎯 Objectif
 
-        **OCC_XXX.csv**
-        - Occupation minute par minute
-        - Format : `0:00 - Duration 11 Min`, `0:01 - Duration 11 Min`...
-        - Colonne B = ID du TV (ex: LFEKHN)
+        Trouver la **MV (Minimum de Viabilité)** :
+        - Quelle charge horaire max avant dégradation ?
+        - Graphique : **Charge (X) vs Score (Y)**
+        - MV = limite où le score chute
         """)
 
     with col2:
         st.markdown("""
-        ### 🎯 Méthodes de scoring
+        ### 📈 Analyse
 
-        **1. Fenêtre glissante 5 min**
-        - Lisse la volatilité
-        - Score minute par minute
-
-        **2. Percentile 90 horaire**
-        - Ignore pics isolés (10% pires valeurs)
-        - Score par heure fixe
-
-        **3. Règle de dégroupement**
-        - OCC > PEAK → Dégroupement obligatoire
+        Pour chaque heure :
+        1. Calcul score OCC (60 minutes)
+        2. Récupération charge LOAD
+        3. Point sur graphique
+        4. Identification seuil critique
         """)
 
     st.stop()
@@ -105,369 +114,341 @@ if uploaded_occ is None:
 try:
     occ_df = pd.read_csv(uploaded_occ, sep=';', index_col=0)
     occ_df.index.name = 'Date'
-
-    # Détecter TV
-    tv_detected = occ_df['ID'].iloc[0]
-
-    st.success(f"✅ **TV détecté : {tv_detected}**")
-
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("📍 Secteur", tv_detected)
-    with col2:
-        st.metric("📅 Jours", len(occ_df))
-    with col3:
-        st.metric("📆 Période", f"{occ_df.index[0]} → {occ_df.index[-1]}")
+    tv_occ = occ_df['ID'].iloc[0]
 
 except Exception as e:
-    st.error(f"❌ **Erreur lecture OCC :** {e}")
+    st.error(f"❌ Erreur OCC : {e}")
     st.stop()
 
-# Charger LOAD (optionnel)
-load_df = None
-if uploaded_load:
-    try:
-        load_df = pd.read_csv(uploaded_load, sep=';')
-        st.info(f"✅ LOAD chargé : {len(load_df)} jours")
-    except:
-        st.warning("⚠️ Erreur lecture LOAD (ignoré)")
+# Charger LOAD
+try:
+    load_df = pd.read_csv(uploaded_load, sep=';')
+    tv_load = load_df['ID'].iloc[0]
+
+    if tv_load != tv_occ:
+        st.warning(f"⚠️ TV différents : LOAD={tv_load}, OCC={tv_occ}")
+
+    tv_detected = tv_load
+
+except Exception as e:
+    st.error(f"❌ Erreur LOAD : {e}")
+    st.stop()
+
+st.success(f"✅ **TV : {tv_detected}** | OCC : {len(occ_df)} jours | LOAD : {len(load_df)} jours")
 
 # ============================================
-# FONCTIONS DE SCORING
+# FONCTIONS SCORING
 # ============================================
 
-def score_sliding_window(occ_minutes, sustain, tolerance, window=5):
-    """Score avec fenêtre glissante 5 minutes"""
-    scores = []
-    n = len(occ_minutes)
-    half_window = window // 2
-
-    for i in range(n):
-        start = max(0, i - half_window)
-        end = min(n, i + half_window + 1)
-        avg_occ = np.mean(occ_minutes[start:end])
-
-        if avg_occ <= sustain + tolerance:
-            scores.append(1)
+def score_option_a(occ_minutes, sustain, tolerance):
+    """Option A : Dégradation linéaire simple"""
+    score = 0
+    for occ in occ_minutes:
+        if occ <= sustain + tolerance:
+            score += 1
         else:
-            scores.append(-(avg_occ - sustain - tolerance))
+            score -= (occ - sustain - tolerance)
+    return score
 
-    return sum(scores)
-
-def score_percentile(occ_hour, sustain, tolerance):
-    """Score basé sur percentile 90"""
-    p90 = np.percentile(occ_hour, 90)
-
-    if p90 <= sustain:
-        return 60
-    elif p90 <= sustain + tolerance:
-        return 30
-    else:
-        return -60 * (p90 - sustain - tolerance)
-
-def detect_degroupement(occ_minutes, peak):
-    """Détecte les minutes de dégroupement (OCC > PEAK)"""
-    return sum(1 for occ in occ_minutes if occ > peak)
+def score_option_b(occ_minutes, sustain, tolerance, peak):
+    """Option B : Trois zones avec PEAK"""
+    score = 0
+    for occ in occ_minutes:
+        if occ <= sustain + tolerance:
+            score += 1
+        elif occ <= peak:
+            score += 0  # Zone d'alerte
+        else:
+            score -= (occ - peak) * 2  # Dégroupement pénalisé
+    return score
 
 # ============================================
-# CALCUL DES SCORES
+# CALCUL
 # ============================================
 
 st.divider()
-col1, col2 = st.columns([3, 1])
-with col1:
-    st.subheader("🔬 Analyse MV")
-with col2:
-    if st.button("🚀 Calculer", type="primary", use_container_width=True):
-        st.session_state['calculate'] = True
+if st.button("🚀 Calculer scores et générer graphique", type="primary", use_container_width=True):
 
-if st.session_state.get('calculate', False):
-    with st.spinner("🔄 Calcul des scores MV en cours..."):
+    with st.spinner("🔄 Calcul en cours..."):
 
-        # Identifier colonnes minutes
+        # Colonnes OCC
         minute_cols = [col for col in occ_df.columns if 'Duration 11 Min' in col]
+
+        # Colonnes LOAD
+        load_cols = [col for col in load_df.columns if ':' in col and '-' in col]
 
         results = []
 
+        # Pour chaque date dans OCC
         for date in occ_df.index:
-            row = occ_df.loc[date]
+            row_occ = occ_df.loc[date]
 
-            # Extraire occupation
+            # Trouver ligne correspondante dans LOAD
+            row_load = load_df[load_df['Date'] == date]
+
+            if len(row_load) == 0:
+                continue  # Pas de correspondance LOAD
+
+            row_load = row_load.iloc[0]
+
+            # Extraire toutes valeurs OCC (1440 minutes)
             occ_values = []
             for col in minute_cols:
                 try:
-                    occ_values.append(float(row[col]))
+                    occ_values.append(float(row_occ[col]))
                 except:
                     occ_values.append(0)
 
-            # Analyser par heure
+            # Analyser par heure (0-23)
             for hour in range(24):
                 start_min = hour * 60
                 end_min = (hour + 1) * 60
                 occ_hour = occ_values[start_min:end_min]
 
                 # Scores
-                score_m1 = score_sliding_window(occ_hour, sustain, tolerance)
-                score_m2 = score_percentile(occ_hour, sustain, tolerance)
+                score_a = score_option_a(occ_hour, sustain, tolerance)
+                score_b = score_option_b(occ_hour, sustain, tolerance, peak)
 
-                # Dégroupement
-                nb_degroup = detect_degroupement(occ_hour, peak)
+                # Charge LOAD correspondante
+                load_col_name = f"{hour}:00-{hour+1}:00"
+                try:
+                    load_value = float(row_load[load_col_name])
+                except:
+                    load_value = None
 
-                # Stats
+                # Stats OCC
                 avg_occ = np.mean(occ_hour)
                 max_occ = np.max(occ_hour)
-                p90_occ = np.percentile(occ_hour, 90)
 
                 results.append({
                     'Date': date,
                     'Hour': hour,
+                    'Load': load_value,
+                    'Score_A': round(score_a, 2),
+                    'Score_B': round(score_b, 2),
                     'Avg_OCC': round(avg_occ, 2),
-                    'Max_OCC': round(max_occ, 2),
-                    'P90_OCC': round(p90_occ, 2),
-                    'Score_M1': round(score_m1, 2),
-                    'Score_M2': round(score_m2, 2),
-                    'Minutes_Degroup': nb_degroup,
-                    'Status': '🚨 DÉGROUPÉ' if nb_degroup > 0 else '✅ GROUPÉ'
+                    'Max_OCC': round(max_occ, 2)
                 })
 
         df_results = pd.DataFrame(results)
 
-        # ============================================
-        # AFFICHAGE RÉSULTATS
-        # ============================================
+        # Filtrer lignes avec LOAD valide
+        df_results = df_results[df_results['Load'].notna()]
 
         st.success(f"✅ **{len(df_results)} heures analysées**")
 
-        # Stats globales
-        st.markdown("### 📈 Statistiques globales")
+        # ============================================
+        # GRAPHIQUES
+        # ============================================
 
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            viable_m1 = len(df_results[df_results['Score_M1'] > 0])
-            st.metric(
-                "Heures viables (M1)",
-                f"{viable_m1/len(df_results)*100:.1f}%",
-                f"{viable_m1} / {len(df_results)}"
-            )
+        st.markdown("### 📊 Graphique : Charge LOAD vs Score OCC")
 
-        with col2:
-            viable_m2 = len(df_results[df_results['Score_M2'] > 0])
-            st.metric(
-                "Heures viables (M2)",
-                f"{viable_m2/len(df_results)*100:.1f}%",
-                f"{viable_m2} / {len(df_results)}"
-            )
-
-        with col3:
-            degroup_hours = len(df_results[df_results['Minutes_Degroup'] > 0])
-            st.metric(
-                "Heures avec dégroupement",
-                f"{degroup_hours/len(df_results)*100:.1f}%",
-                f"{degroup_hours} heures"
-            )
-
-        with col4:
-            total_degroup_min = df_results['Minutes_Degroup'].sum()
-            st.metric(
-                "Total minutes dégroupées",
-                f"{total_degroup_min:,} min",
-                f"{total_degroup_min/60:.0f}h"
-            )
-
-        # Graphique 1 : Distribution scores
-        st.markdown("### 📊 Distribution des scores")
-
-        tab1, tab2, tab3 = st.tabs(["📈 Scores par heure", "🕐 Scores par heure de la journée", "📅 Scores par jour"])
+        tab1, tab2, tab3 = st.tabs(["📈 Option A (Linéaire)", "📈 Option B (Trois zones)", "📊 Comparaison"])
 
         with tab1:
+            st.markdown("**Option A : Dégradation linéaire simple**")
+
             fig1 = go.Figure()
 
             fig1.add_trace(go.Scatter(
-                x=df_results.index,
-                y=df_results['Score_M1'],
-                name='Méthode 1 (Fenêtre 5min)',
-                mode='lines',
-                line=dict(color='#1f77b4', width=1)
-            ))
-
-            fig1.add_trace(go.Scatter(
-                x=df_results.index,
-                y=df_results['Score_M2'],
-                name='Méthode 2 (P90)',
-                mode='lines',
-                line=dict(color='#ff7f0e', width=1)
+                x=df_results['Load'],
+                y=df_results['Score_A'],
+                mode='markers',
+                marker=dict(
+                    size=6,
+                    color=df_results['Score_A'],
+                    colorscale='RdYlGn',
+                    showscale=True,
+                    colorbar=dict(title="Score"),
+                    opacity=0.6
+                ),
+                text=[f"Date: {row['Date']}<br>Heure: {row['Hour']}h<br>Load: {row['Load']}<br>Score: {row['Score_A']}" 
+                      for _, row in df_results.iterrows()],
+                hovertemplate='%{text}<extra></extra>'
             ))
 
             fig1.add_hline(y=0, line_dash="dash", line_color="red", 
-                          annotation_text="Seuil viabilité")
+                          annotation_text="Seuil viabilité (score=0)")
 
             fig1.update_layout(
-                title=f"Évolution des scores MV - {tv_detected}",
-                xaxis_title="Heures chronologiques",
-                yaxis_title="Score MV",
-                height=400
+                title=f"Charge vs Score (Option A) - {tv_detected}",
+                xaxis_title="Charge horaire LOAD (avions/heure)",
+                yaxis_title="Score OCC (max = 60)",
+                height=500
             )
 
             st.plotly_chart(fig1, use_container_width=True)
 
+            # Stats Option A
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                viable_a = len(df_results[df_results['Score_A'] > 0])
+                st.metric("Heures viables", f"{viable_a/len(df_results)*100:.1f}%", f"{viable_a} heures")
+            with col2:
+                avg_score_a = df_results['Score_A'].mean()
+                st.metric("Score moyen", f"{avg_score_a:.1f}")
+            with col3:
+                # MV estimation
+                viable_df = df_results[df_results['Score_A'] > 30]
+                if len(viable_df) > 0:
+                    mv_estimate = viable_df['Load'].quantile(0.95)
+                    st.metric("MV estimée (P95)", f"{mv_estimate:.0f} av/h")
+
         with tab2:
-            hourly_avg = df_results.groupby('Hour').agg({
-                'Score_M1': 'mean',
-                'Score_M2': 'mean',
-                'Minutes_Degroup': 'sum'
-            }).reset_index()
+            st.markdown("**Option B : Trois zones (SUSTAIN / PEAK / DÉGROUPEMENT)**")
 
             fig2 = go.Figure()
 
-            fig2.add_trace(go.Bar(
-                x=hourly_avg['Hour'],
-                y=hourly_avg['Score_M1'],
-                name='Méthode 1',
-                marker_color='#1f77b4'
+            fig2.add_trace(go.Scatter(
+                x=df_results['Load'],
+                y=df_results['Score_B'],
+                mode='markers',
+                marker=dict(
+                    size=6,
+                    color=df_results['Score_B'],
+                    colorscale='RdYlGn',
+                    showscale=True,
+                    colorbar=dict(title="Score"),
+                    opacity=0.6
+                ),
+                text=[f"Date: {row['Date']}<br>Heure: {row['Hour']}h<br>Load: {row['Load']}<br>Score: {row['Score_B']}" 
+                      for _, row in df_results.iterrows()],
+                hovertemplate='%{text}<extra></extra>'
             ))
 
-            fig2.add_trace(go.Bar(
-                x=hourly_avg['Hour'],
-                y=hourly_avg['Score_M2'],
-                name='Méthode 2',
-                marker_color='#ff7f0e'
-            ))
+            fig2.add_hline(y=0, line_dash="dash", line_color="red", 
+                          annotation_text="Seuil viabilité")
 
             fig2.update_layout(
-                title="Score moyen par heure de la journée",
-                xaxis_title="Heure (0-23h)",
-                yaxis_title="Score moyen",
-                barmode='group',
-                height=400
+                title=f"Charge vs Score (Option B) - {tv_detected}",
+                xaxis_title="Charge horaire LOAD (avions/heure)",
+                yaxis_title="Score OCC (max = 60)",
+                height=500
             )
 
             st.plotly_chart(fig2, use_container_width=True)
 
+            # Stats Option B
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                viable_b = len(df_results[df_results['Score_B'] > 0])
+                st.metric("Heures viables", f"{viable_b/len(df_results)*100:.1f}%", f"{viable_b} heures")
+            with col2:
+                avg_score_b = df_results['Score_B'].mean()
+                st.metric("Score moyen", f"{avg_score_b:.1f}")
+            with col3:
+                viable_df_b = df_results[df_results['Score_B'] > 30]
+                if len(viable_df_b) > 0:
+                    mv_estimate_b = viable_df_b['Load'].quantile(0.95)
+                    st.metric("MV estimée (P95)", f"{mv_estimate_b:.0f} av/h")
+
         with tab3:
-            daily_stats = df_results.groupby('Date').agg({
-                'Score_M1': 'sum',
-                'Score_M2': 'sum',
-                'Minutes_Degroup': 'sum'
-            }).reset_index()
+            st.markdown("**Comparaison des deux méthodes**")
 
             fig3 = go.Figure()
 
             fig3.add_trace(go.Scatter(
-                x=daily_stats['Date'],
-                y=daily_stats['Score_M2'],
-                name='Score M2 journalier',
-                mode='lines+markers',
-                line=dict(color='#2ca02c', width=2)
+                x=df_results['Load'],
+                y=df_results['Score_A'],
+                mode='markers',
+                name='Option A (Linéaire)',
+                marker=dict(size=5, color='blue', opacity=0.5)
+            ))
+
+            fig3.add_trace(go.Scatter(
+                x=df_results['Load'],
+                y=df_results['Score_B'],
+                mode='markers',
+                name='Option B (Trois zones)',
+                marker=dict(size=5, color='orange', opacity=0.5)
             ))
 
             fig3.add_hline(y=0, line_dash="dash", line_color="red")
 
             fig3.update_layout(
-                title="Score MV par jour (Méthode 2)",
-                xaxis_title="Date",
-                yaxis_title="Score total journalier",
-                height=400
+                title="Comparaison Options A vs B",
+                xaxis_title="Charge LOAD (av/h)",
+                yaxis_title="Score OCC",
+                height=500
             )
 
             st.plotly_chart(fig3, use_container_width=True)
 
-        # Graphique 2 : Dégroupements
-        st.markdown("### 🚨 Analyse des dégroupements")
+            # Corrélation
+            corr_ab = df_results['Score_A'].corr(df_results['Score_B'])
+            st.info(f"🔗 Corrélation entre Option A et B : {corr_ab:.3f}")
+
+        # ============================================
+        # ANALYSE PAR TRANCHE DE CHARGE
+        # ============================================
+
+        st.markdown("### 📊 Analyse par tranche de charge")
+
+        # Créer tranches
+        df_results['Load_Bucket'] = pd.cut(df_results['Load'], bins=[0, 20, 40, 60, 80, 100, 200])
+
+        tranches = df_results.groupby('Load_Bucket').agg({
+            'Score_A': ['mean', 'min', 'max', 'count'],
+            'Score_B': ['mean', 'min', 'max']
+        }).round(2)
+
+        st.dataframe(tranches, use_container_width=True)
+
+        # ============================================
+        # IDENTIFICATION MV
+        # ============================================
+
+        st.markdown("### 🎯 Identification MV")
 
         col1, col2 = st.columns(2)
 
         with col1:
-            degroup_by_hour = df_results.groupby('Hour')['Minutes_Degroup'].sum()
+            st.markdown("**Option A**")
 
-            fig4 = go.Figure(data=[go.Bar(
-                x=degroup_by_hour.index,
-                y=degroup_by_hour.values,
-                marker_color='#d62728'
-            )])
+            # Critère : Score > 30 (50% minutes OK)
+            viable_loads_a = df_results[df_results['Score_A'] > 30]['Load']
 
-            fig4.update_layout(
-                title="Minutes de dégroupement par heure",
-                xaxis_title="Heure",
-                yaxis_title="Total minutes dégroupées",
-                height=350
-            )
+            if len(viable_loads_a) > 0:
+                mv_p50_a = viable_loads_a.quantile(0.50)
+                mv_p75_a = viable_loads_a.quantile(0.75)
+                mv_p95_a = viable_loads_a.quantile(0.95)
 
-            st.plotly_chart(fig4, use_container_width=True)
-
-        with col2:
-            # Heatmap occupation moyenne
-            heatmap_data = df_results.pivot_table(
-                values='Avg_OCC',
-                index='Hour',
-                columns=df_results['Date'],
-                aggfunc='mean'
-            )
-
-            fig5 = go.Figure(data=go.Heatmap(
-                z=heatmap_data.values,
-                x=heatmap_data.columns,
-                y=heatmap_data.index,
-                colorscale='RdYlGn_r',
-                hovertemplate='Date: %{x}<br>Heure: %{y}h<br>OCC: %{z:.1f}<extra></extra>'
-            ))
-
-            fig5.update_layout(
-                title="Heatmap occupation moyenne",
-                xaxis_title="Date",
-                yaxis_title="Heure",
-                height=350
-            )
-
-            st.plotly_chart(fig5, use_container_width=True)
-
-        # Top journées problématiques
-        st.markdown("### 🚨 Top 10 journées problématiques")
-
-        daily_stats_sorted = daily_stats.sort_values('Score_M2')
-
-        col1, col2 = st.columns(2)
-
-        with col1:
-            st.markdown("**Pires journées (Score M2)**")
-            worst_days = daily_stats_sorted.head(10)
-            st.dataframe(
-                worst_days[['Date', 'Score_M2', 'Minutes_Degroup']],
-                hide_index=True,
-                use_container_width=True
-            )
+                st.metric("MV conservatrice (P50)", f"{mv_p50_a:.0f} av/h")
+                st.metric("MV normale (P75)", f"{mv_p75_a:.0f} av/h")
+                st.metric("MV optimiste (P95)", f"{mv_p95_a:.0f} av/h")
+            else:
+                st.warning("Aucune heure viable détectée")
 
         with col2:
-            st.markdown("**Meilleures journées (Score M2)**")
-            best_days = daily_stats_sorted.tail(10).sort_values('Score_M2', ascending=False)
-            st.dataframe(
-                best_days[['Date', 'Score_M2', 'Minutes_Degroup']],
-                hide_index=True,
-                use_container_width=True
-            )
+            st.markdown("**Option B**")
 
-        # Export
+            viable_loads_b = df_results[df_results['Score_B'] > 30]['Load']
+
+            if len(viable_loads_b) > 0:
+                mv_p50_b = viable_loads_b.quantile(0.50)
+                mv_p75_b = viable_loads_b.quantile(0.75)
+                mv_p95_b = viable_loads_b.quantile(0.95)
+
+                st.metric("MV conservatrice (P50)", f"{mv_p50_b:.0f} av/h")
+                st.metric("MV normale (P75)", f"{mv_p75_b:.0f} av/h")
+                st.metric("MV optimiste (P95)", f"{mv_p95_b:.0f} av/h")
+            else:
+                st.warning("Aucune heure viable détectée")
+
+        # ============================================
+        # EXPORT
+        # ============================================
+
         st.divider()
-        st.markdown("### 💾 Export des données")
+        st.markdown("### 💾 Export")
 
-        col1, col2 = st.columns(2)
-
-        with col1:
-            csv_hourly = df_results.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="📥 Télécharger scores horaires (CSV)",
-                data=csv_hourly,
-                file_name=f"mv_scores_hourly_{tv_detected}_{datetime.now().strftime('%Y%m%d')}.csv",
-                mime="text/csv"
-            )
-
-        with col2:
-            csv_daily = daily_stats.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="📥 Télécharger scores journaliers (CSV)",
-                data=csv_daily,
-                file_name=f"mv_scores_daily_{tv_detected}_{datetime.now().strftime('%Y%m%d')}.csv",
-                mime="text/csv"
-            )
+        csv_export = df_results.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📥 Télécharger résultats (CSV)",
+            data=csv_export,
+            file_name=f"mv_load_vs_score_{tv_detected}_{datetime.now().strftime('%Y%m%d')}.csv",
+            mime="text/csv"
+        )
 
 st.markdown("---")
-st.markdown("*Analyse MV (Minimum de Viabilité) - Scoring basé sur OCC vs SUSTAIN/PEAK*")
+st.markdown("*Analyse MV : Corrélation Charge LOAD vs Score OCC*")
