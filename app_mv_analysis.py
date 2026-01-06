@@ -79,62 +79,38 @@ with st.sidebar:
     """)
 
 # ============================================
-# CHARGEMENT DONNÉES (ROBUSTE)
+# CHARGEMENT DONNÉES (PARFAIT)
 # ============================================
 
 if uploaded_occ is None or uploaded_load is None:
     st.info("👈 **Chargez OCC et LOAD**")
     st.stop()
 
-# Charger OCC
-try:
-    occ_df = pd.read_csv(uploaded_occ, sep=';')
-    
-    # Lire TV (colonne B, index 1)
-    tv_occ = occ_df.iloc[0, 1]
-    
-    # Convertir Date SEULEMENT si colonne existe et format correct
-    if 'Date' in occ_df.columns:
-        # Parser dates au format dd/mm/yyyy
-        occ_df['Date'] = pd.to_datetime(occ_df['Date'], format='%d/%m/%Y', errors='coerce')
-    
-    # Colonnes OCC
-    minute_cols = [col for col in occ_df.columns if 'Duration 11 Min' in col]
-    
-    st.success(f"✅ OCC : **{tv_occ}** | {len(occ_df)} lignes | {len(minute_cols)} minutes")
-    
-except Exception as e:
-    st.error(f"❌ Erreur OCC : {e}")
-    st.stop()
+# OCC
+occ_df = pd.read_csv(uploaded_occ, sep=';')
+tv_occ = occ_df.iloc[0, 1]  # Colonne B = LFEKHN
+if 'Date' in occ_df.columns:
+    occ_df['Date'] = pd.to_datetime(occ_df['Date'], format='%d/%m/%Y', errors='coerce')
+minute_cols = [col for col in occ_df.columns if 'Duration 11 Min' in col or 'Actual' in col]
 
-# Charger LOAD
-try:
-    load_df = pd.read_csv(uploaded_load, sep=';')
-    
-    # Lire TV (colonne B, index 1)
-    tv_load = load_df.iloc[0, 1]
-    
-    # Convertir Date SEULEMENT si colonne existe
-    if 'Date' in load_df.columns:
-        load_df['Date'] = pd.to_datetime(load_df['Date'], format='%d/%m/%Y', errors='coerce')
-    
-    # Colonnes LOAD
-    load_cols = [col for col in load_df.columns if ':' in col and '-' in col]
-    
-    st.success(f"✅ LOAD : **{tv_load}** | {len(load_df)} lignes | {len(load_cols)} fenêtres")
-    
-except Exception as e:
-    st.error(f"❌ Erreur LOAD : {e}")
-    st.stop()
+# LOAD  
+load_df = pd.read_csv(uploaded_load, sep=';')
+tv_load = load_df.iloc[0, 1]  # Colonne B = LFEKHN
+if 'Date' in load_df.columns:
+    load_df['Date'] = pd.to_datetime(load_df['Date'], format='%d/%m/%Y', errors='coerce')
+load_cols = [col for col in load_df.columns if ':' in col or 'Demand' in col]
 
-# Vérification TV
-if str(tv_occ).strip() != str(tv_load).strip():
-    st.error(f"❌ TV différents : OCC='{tv_occ}', LOAD='{tv_load}'")
-    st.stop()
-else:
+# Debug
+st.info(f"🔍 OCC première ligne : {occ_df.iloc[0, :4].tolist()}")
+st.info(f"🔍 LOAD première ligne : {load_df.iloc[0, :4].tolist()}")
+
+# Vérif
+if str(tv_occ).strip() == str(tv_load).strip():
     tv_detected = str(tv_occ).strip()
-    st.balloons()
-    st.info(f"🎯 TV confirmée : **{tv_detected}**")
+    st.success(f"✅ TV : **{tv_detected}** | OCC:{len(occ_df)}j | LOAD:{len(load_df)}j")
+else:
+    st.error(f"❌ TV différent : OCC='{tv_occ}', LOAD='{tv_load}'")
+    st.stop()
 
 
 
