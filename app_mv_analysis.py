@@ -453,7 +453,7 @@ if st.button("🚀 Calculer MV (glissant 20min)", type="primary", use_container_
         **MV = Charge maximale** où le score reste **> 30** (50% minutes viables)
 
         - **P50 (conservateur)** : 50% des fenêtres viables ≤ MV
-        - **P75 (recommandé)** : 75% des fenêtres viables ≤ MV ⭐
+        - **P80 (recommandé)** : 80% des fenêtres viables ≤ MV ⭐
         - **P90 (optimiste)** : 90% des fenêtres viables ≤ MV
         """)
 
@@ -466,11 +466,11 @@ if st.button("🚀 Calculer MV (glissant 20min)", type="primary", use_container_
 
             if len(viable_loads_a) > 10:
                 mv_p50_a = viable_loads_a.quantile(0.50)
-                mv_p75_a = viable_loads_a.quantile(0.75)
+                mv_p80_a = viable_loads_a.quantile(0.80)
                 mv_p90_a = viable_loads_a.quantile(0.90)
 
                 st.metric("MV P50", f"{mv_p50_a:.0f} av/h", help="Conservateur")
-                st.metric("MV P75 ⭐", f"{mv_p75_a:.0f} av/h", help="Recommandé")
+                st.metric("MV P80 ⭐", f"{mv_p80_a:.0f} av/h", help="Recommandé")
                 st.metric("MV P90", f"{mv_p90_a:.0f} av/h", help="Optimiste")
 
                 st.info(f"📊 {len(viable_loads_a)} fenêtres viables (score > 30)")
@@ -484,11 +484,11 @@ if st.button("🚀 Calculer MV (glissant 20min)", type="primary", use_container_
 
             if len(viable_loads_b) > 10:
                 mv_p50_b = viable_loads_b.quantile(0.50)
-                mv_p75_b = viable_loads_b.quantile(0.75)
+                mv_p80_b = viable_loads_b.quantile(0.80)
                 mv_p90_b = viable_loads_b.quantile(0.90)
 
                 st.metric("MV P50", f"{mv_p50_b:.0f} av/h", help="Conservateur")
-                st.metric("MV P75 ⭐", f"{mv_p75_b:.0f} av/h", help="Recommandé")
+                st.metric("MV P80 ⭐", f"{mv_p80_b:.0f} av/h", help="Recommandé")
                 st.metric("MV P90", f"{mv_p90_b:.0f} av/h", help="Optimiste")
 
                 st.info(f"📊 {len(viable_loads_b)} fenêtres viables (score > 30)")
